@@ -31,7 +31,11 @@ import io.airbyte.cdk.load.message.StreamCheckpointWrapped
 import io.airbyte.cdk.load.message.StreamKey
 import io.airbyte.cdk.load.util.CloseableCoroutine
 import io.github.oshai.kotlinlogging.KotlinLogging
+import jakarta.inject.Named
 import jakarta.inject.Singleton
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The stdio and socket input channel differ in subtle and critical ways
@@ -56,8 +60,21 @@ class PipelineEventBookkeepingRouter(
     private val checkpointQueue: QueueWriter<Reserved<CheckpointMessageWrapped>>,
     private val openStreamQueue: QueueWriter<DestinationStream>,
     private val fileTransferQueue: MessageQueue<FileTransferQueueMessage>,
+    @Named("numDataChannels") numDataChannels: Int,
 ) : CloseableCoroutine {
     private val log = KotlinLogging.logger {}
+
+    private val clientCount = AtomicInteger(numDataChannels)
+
+    private val streamCompletionCountdownLatches = ConcurrentHashMap(
+        catalog.streams.associate {
+            it.descriptor to AtomicInteger(numDataChannels)
+        }
+    )
+
+    init {
+        log.info { "Creating bookkeeping router for $numDataChannels data channels" }
+    }
 
     suspend fun handleStreamMessage(
         message: DestinationStreamAffinedMessage,
@@ -79,21 +96,26 @@ class PipelineEventBookkeepingRouter(
             is DestinationRecord -> {
                 val record = message.asDestinationRecordRaw()
                 manager.incrementReadCount()
+                val checkpointId = record.checkpointId ?: manager.getCurrentCheckpointId()
                 PipelineMessage(
-                    mapOf(manager.getCurrentCheckpointId() to 1),
+                    mapOf(checkpointId to 1),
                     StreamKey(stream.descriptor),
                     record,
                     postProcessingCallback
                 )
             }
             is DestinationRecordStreamComplete -> {
-                manager.markEndOfStream(true)
                 log.info { "Read COMPLETE for stream ${stream.descriptor}" }
+                if (streamCompletionCountdownLatches[stream.descriptor]!!.decrementAndGet() == 0) {
+                    manager.markEndOfStream(true)
+                }
                 PipelineEndOfStream(stream.descriptor)
             }
             is DestinationRecordStreamIncomplete -> {
-                manager.markEndOfStream(false)
                 log.info { "Read INCOMPLETE for stream ${stream.descriptor}" }
+                if (streamCompletionCountdownLatches[stream.descriptor]!!.decrementAndGet() == 0) {
+                    manager.markEndOfStream(false)
+                }
                 PipelineEndOfStream(stream.descriptor)
             }
 
@@ -158,9 +180,13 @@ class PipelineEventBookkeepingRouter(
     }
 
     override suspend fun close() {
-        fileTransferQueue.close()
-        checkpointQueue.close()
-        openStreamQueue.close()
-        syncManager.markInputConsumed()
+        log.info { "Maybe closing bookkeeping router ${clientCount.get()}" }
+        if (clientCount.decrementAndGet() == 0) {
+            log.info { "Closing internal control channels" }
+            fileTransferQueue.close()
+            checkpointQueue.close()
+            openStreamQueue.close()
+            syncManager.markInputConsumed()
+        }
     }
 }

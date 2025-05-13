@@ -32,7 +32,7 @@ interface DestinationProcess {
     suspend fun run()
 
     suspend fun sendMessage(string: String)
-    suspend fun sendMessage(message: AirbyteMessage)
+    suspend fun sendMessage(message: AirbyteMessage, broadcast: Boolean = false)
     suspend fun sendMessages(vararg messages: AirbyteMessage) {
         messages.forEach { sendMessage(it) }
     }

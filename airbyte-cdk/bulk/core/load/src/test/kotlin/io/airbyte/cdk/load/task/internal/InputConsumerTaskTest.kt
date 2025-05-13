@@ -98,6 +98,7 @@ class InputConsumerTaskTest {
                 checkpointQueue = checkpointQueue,
                 openStreamQueue = mockk(relaxed = true),
                 fileTransferQueue = mockk(relaxed = true),
+                1
             )
         val task =
             InputConsumerTask(
@@ -146,6 +147,7 @@ class InputConsumerTaskTest {
                 checkpointQueue = checkpointQueue,
                 openStreamQueue = mockk(relaxed = true),
                 fileTransferQueue = mockk(relaxed = true),
+                1
             )
         val task =
             InputConsumerTask(
@@ -312,6 +314,7 @@ class InputConsumerTaskTest {
                 checkpointQueue = checkpointQueue,
                 openStreamQueue = mockk(relaxed = true),
                 fileTransferQueue = mockk(relaxed = true),
+                1
             )
         val task =
             InputConsumerTask(

@@ -21,7 +21,7 @@ data class StreamProcessingFailed(val streamException: Exception) : StreamResult
 
 data object StreamProcessingSucceeded : StreamResult
 
-@JvmInline value class CheckpointId(val id: Int)
+@JvmInline value class CheckpointId(val id: Int = 0)
 
 data class CheckpointValue(
     val records: Long,

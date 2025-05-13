@@ -6,6 +6,8 @@ package io.airbyte.cdk.load.message
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.IntNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import io.airbyte.cdk.load.command.DestinationCatalog
 import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.data.AirbyteType
@@ -29,6 +31,7 @@ import io.airbyte.cdk.load.data.json.toAirbyteValue
 import io.airbyte.cdk.load.data.toAirbyteValues
 import io.airbyte.cdk.load.message.CheckpointMessage.Checkpoint
 import io.airbyte.cdk.load.message.CheckpointMessage.Stats
+import io.airbyte.cdk.load.state.CheckpointId
 import io.airbyte.cdk.load.util.deserializeToNode
 import io.airbyte.protocol.models.v0.AirbyteGlobalState
 import io.airbyte.protocol.models.v0.AirbyteMessage
@@ -44,6 +47,7 @@ import io.airbyte.protocol.models.v0.AirbyteStreamStatusTraceMessage
 import io.airbyte.protocol.models.v0.AirbyteStreamStatusTraceMessage.AirbyteStreamStatus
 import io.airbyte.protocol.models.v0.AirbyteTraceMessage
 import io.micronaut.context.annotation.Value
+import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.math.BigInteger
 import java.time.OffsetDateTime
@@ -191,7 +195,8 @@ data class DestinationRecord(
     override val stream: DestinationStream,
     val message: AirbyteMessage,
     val schema: AirbyteType,
-    val serializedSizeBytes: Long
+    val serializedSizeBytes: Long,
+    val checkpointId: CheckpointId? = null
 ) : DestinationRecordDomainMessage {
     override fun asProtocolMessage(): AirbyteMessage = message
 
@@ -314,6 +319,7 @@ data class DestinationRecordRaw(
     val rawData: AirbyteMessage,
     val schema: AirbyteType,
     private val serializedSizeBytes: Long,
+    val checkpointId: CheckpointId? = null
 ) {
     val fileReference: FileReference? =
         rawData.record?.fileReference?.let { FileReference.fromProtocol(it) }
@@ -651,6 +657,7 @@ class DestinationMessageFactory(
     private val catalog: DestinationCatalog,
     @Value("\${airbyte.destination.core.file-transfer.enabled}")
     private val fileTransferEnabled: Boolean,
+    @Named("requireCheckpointIdOnRecord") private val requireCheckpointIdOnRecord: Boolean = false
 ) {
     fun fromAirbyteMessage(message: AirbyteMessage, serializedSizeBytes: Long): DestinationMessage {
         fun toLong(value: Any?, name: String): Long? {
@@ -700,7 +707,17 @@ class DestinationMessageFactory(
                         )
                     }
                 } else {
-                    DestinationRecord(stream, message, stream.schema, serializedSizeBytes)
+                    // In socket mode, multiple sockets can run in parallel, which means that we
+                    // depend on upstream to associate each record with the appropriate state
+                    // message for us.
+                    val checkpointId = if (requireCheckpointIdOnRecord) {
+                        val blob = (message.additionalProperties["checkpointId"]
+                            ?: throw IllegalStateException("No `checkpointId` on record")) as ObjectNode
+                        CheckpointId(blob.get("id").intValue())
+                    } else {
+                        null
+                    }
+                    DestinationRecord(stream, message, stream.schema, serializedSizeBytes, checkpointId)
                 }
             }
             AirbyteMessage.Type.TRACE -> {

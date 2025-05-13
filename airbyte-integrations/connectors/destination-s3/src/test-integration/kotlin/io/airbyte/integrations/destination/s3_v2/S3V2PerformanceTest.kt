@@ -45,7 +45,7 @@ class S3V2ParquetSnappyPerformanceTest :
  * the ceiling on local networks is often lower than the theoretical max. For now this is mostly
  * just an opt-in local e2e sanity check.
  */
-@Disabled("We don't want this to run in CI")
+//@Disabled("We don't want this to run in CI")
 class S3V2JsonNoFrillsPerformanceTestSockets :
     BasicPerformanceTest(
         configContents = S3V2TestUtils.getConfig(S3V2TestUtils.JSON_UNCOMPRESSED_CONFIG_PATH),

@@ -32,6 +32,7 @@ import io.micronaut.context.annotation.Requires
 import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
 import jakarta.inject.Singleton
+import javax.xml.crypto.Data
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 
@@ -85,18 +86,36 @@ class DataChannelBeanFactory {
     fun numInputPartitions(
         loadStrategy: LoadStrategy? = null,
         @Named("isFileTransfer") isFileTransfer: Boolean = false,
-        dataChannelMedium: DataChannelMedium
+        dataChannelMedium: DataChannelMedium,
+        @Named("dataChannelSocketPaths") dataChannelSocketPaths: List<String>,
     ): Int {
         return when (dataChannelMedium) {
             DataChannelMedium.STDIO -> {
                 if (isFileTransfer) 1 else loadStrategy?.inputPartitions ?: 1
             }
             DataChannelMedium.SOCKETS -> {
-                // For the first cut we'll limit ourselves to 1
-                1
+                dataChannelSocketPaths.size
             }
         }
     }
+
+    @Singleton
+    @Named("numDataChannels")
+    fun numDataChannels(
+        @Named("dataChannelMedium") dataChannelMedium: DataChannelMedium,
+        @Named("numInputPartitions") numInputPartitions: Int
+    ): Int {
+        return when (dataChannelMedium) {
+            DataChannelMedium.STDIO -> 1
+            DataChannelMedium.SOCKETS -> numInputPartitions
+        }
+    }
+
+    @Singleton
+    @Named("requireCheckpointIdOnRecord")
+    fun requireCheckpointIdOnRecord(
+        @Named("dataChannelMedium") dataChannelMedium: DataChannelMedium
+    ): Boolean = dataChannelMedium == DataChannelMedium.SOCKETS
 
     /**
      * PRIVATE: Do not use outside this factory.
@@ -157,12 +176,16 @@ class DataChannelBeanFactory {
         dataChannelMedium: DataChannelMedium,
         dataChannelReader: DataChannelReader,
         pipelineEventBookkeepingRouter: PipelineEventBookkeepingRouter,
-        @Named("numInputPartitions") numInputPartitions: Int,
         @Named("dataChannelSocketPaths") socketPaths: List<String>,
         @Value("\${airbyte.destination.core.data-channel.socket-buffer-size-bytes}")
         bufferSizeBytes: Int,
         @Value("\${airbyte.destination.core.data-channel.socket-connection-timeout-ms}")
         socketConnectionTimeoutMs: Long,
+        @Named("maxInputMessageSizeBytes") maxInputMessageSizeBytes: Int,
+        @Value("\${airbyte.destination.core.data-channel.socket-read-timeout-ms}")
+        socketReadTimeoutMs: Long,
+        @Value("\${airbyte.destination.core.data-channel.socket-timeout-backoff-ms}")
+        socketTimeoutBackoffMs: Long,
     ): Array<Flow<PipelineInputEvent>> {
         return when (dataChannelMedium) {
             DataChannelMedium.STDIO -> {
@@ -172,23 +195,23 @@ class DataChannelBeanFactory {
                 return pipelineInputQueue.asOrderedFlows()
             }
             DataChannelMedium.SOCKETS -> {
-                check(socketPaths.size == numInputPartitions) {
-                    "Socket paths size (${socketPaths.size}) does not match number of input partitions ($numInputPartitions)"
-                }
                 socketPaths
                     .map { path ->
                         val socket =
                             ClientSocket(
                                 path,
                                 bufferSizeBytes,
-                                socketConnectionTimeoutMs,
+                                connectTimeoutMs = socketConnectionTimeoutMs,
                             )
                         SocketInputFlow(
                             catalog,
                             socket,
                             dataChannelReader,
                             pipelineEventBookkeepingRouter,
-                            queueMemoryManager
+                            queueMemoryManager,
+                            maximumMessageSizeBytes = maxInputMessageSizeBytes,
+                            socketReadTimeoutMs = socketReadTimeoutMs,
+                            socketTimeoutBackoffMs = socketTimeoutBackoffMs,
                         )
                     }
                     .toTypedArray()

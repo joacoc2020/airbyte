@@ -10,6 +10,7 @@ import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.message.ChannelMessageQueue
 import io.airbyte.cdk.load.pipeline.BatchUpdate
 import io.airbyte.cdk.load.state.ReservationManager
+import io.airbyte.cdk.load.util.Jsons
 import io.micronaut.context.annotation.Factory
 import io.micronaut.context.annotation.Secondary
 import jakarta.inject.Named
@@ -68,7 +69,7 @@ class SyncBeanFactory {
     }
 
     /* *************
-     * GLOBAL FLAGS
+     * GLOBAL VALUES
      * *************/
 
     /** True if the catalog has at least one stream that includeFiles. */
@@ -76,6 +77,14 @@ class SyncBeanFactory {
     @Named("isFileTransfer")
     fun isFileTransfer(catalog: DestinationCatalog): Boolean =
         catalog.streams.any { it.includeFiles }
+
+    /**
+     * Since JSONS isn't a singleton, we'll source this from the factory
+     * and share it generally. TODO: Make this the source of truth.
+     */
+    @Singleton
+    @Named("maxInputMessageSizeBytes")
+    fun maxInputMessageSizeBytes(): Int = Jsons.JSON_MAX_LENGTH
 
     /* *************
      * GLOBAL STATE

@@ -6,7 +6,9 @@ airbyte:
         format: ${DATA_CHANNEL_FORMAT:JSONL}
         socket-paths: ${DATA_CHANNEL_SOCKET_PATHS:}
         socket-buffer-size-bytes: 16384
-        socket-connection-timeout-ms: 900000 # 15 minutes
+        socket-connection-timeout-ms: 1000 # 15 minutes
+        socket-read-timeout-ms: 1000 # ie, heartbeat once a minute
+        socket-timeout-backoff-ms: 5000
       record-batch-size-override: ${AIRBYTE_DESTINATION_RECORD_BATCH_SIZE_OVERRIDE:null}
       file-transfer:
         enabled: ${USE_FILE_TRANSFER:false}

@@ -14,7 +14,7 @@ import java.nio.channels.SocketChannel
 import kotlinx.coroutines.delay
 
 class ClientSocket(
-    private val socketPath: String,
+    val socketPath: String,
     private val bufferSizeBytes: Int,
     private val connectWaitDelayMs: Long = 1000L,
     private val connectTimeoutMs: Long = 15 * 60 * 1000L,
@@ -35,6 +35,7 @@ class ClientSocket(
                 )
             }
         }
+        log.info { "Socket file $socketPath created" }
 
         val address = UnixDomainSocketAddress.of(socketFile.toPath())
         SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->

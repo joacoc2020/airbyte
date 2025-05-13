@@ -10,6 +10,9 @@ import io.airbyte.cdk.load.message.DestinationMessageFactory
 import io.airbyte.cdk.load.util.Jsons
 import io.airbyte.protocol.models.v0.AirbyteMessage
 import java.io.InputStream
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.map
 
 class JSONLDataChannelReader(catalog: DestinationCatalog) : DataChannelReader {
     // NOTE: Presumes that legacy file transfer is not compatible with sockets.
@@ -17,15 +20,15 @@ class JSONLDataChannelReader(catalog: DestinationCatalog) : DataChannelReader {
         DestinationMessageFactory(catalog, fileTransferEnabled = false)
     private var bytesRead: Long = 0
 
-    override fun read(inputStream: InputStream): Sequence<DestinationMessage> {
+    override fun read(inputStream: InputStream): Iterator<DestinationMessage> = iterator {
         val parser = Jsons.factory.createParser(inputStream)
-        return Jsons.readerFor(AirbyteMessage::class.java)
+        Jsons.readerFor(AirbyteMessage::class.java)
             .readValues<AirbyteMessage>(parser)
-            .asSequence()
-            .map {
+            .forEach {
                 val serializedSize = parser.currentLocation().byteOffset - bytesRead
                 bytesRead += serializedSize
-                destinationMessageFactory.fromAirbyteMessage(it, serializedSize)
+                val message = destinationMessageFactory.fromAirbyteMessage(it, serializedSize)
+                yield(message)
             }
     }
 }
